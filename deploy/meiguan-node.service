@@ -1,0 +1,21 @@
+[Unit]
+Description=meiguan telethon node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/meiguan
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/meiguan/.env
+RuntimeDirectory=meiguan
+ExecStart=/opt/meiguan/.venv/bin/python -m meiguan.node_worker
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+MemoryMax=75%
+MemorySwapMax=256M
+OOMScoreAdjust=200
+
+[Install]
+WantedBy=multi-user.target

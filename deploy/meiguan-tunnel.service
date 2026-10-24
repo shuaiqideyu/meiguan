@@ -1,0 +1,13 @@
+[Unit]
+Description=meiguan web tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --config /opt/meiguan/cloudflared.yml run
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

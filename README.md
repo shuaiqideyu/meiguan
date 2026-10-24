@@ -57,14 +57,14 @@ meiguan 是一套自己部署的 Telegram 红包助手。私聊机器人打开�
 
 ## 机器
 
-程序固定安装在 `/opt/meikai`，用 root 运行。四台机器克隆同一份代码，各自写自己的 `.env`。
+程序固定安装在 `/opt/meiguan`，用 root 运行。四台机器克隆同一份代码，各自写自己的 `.env`。
 
 | 角色 | SSH 主机名 | `NODE_ID` | 数据中心 |
 | --- | --- | --- | --- |
 | 主体 |  | 不填 | 机器人、管理页、Redis |
-| 迈阿密 | `meikai-mia` | `mia` | DC1、DC3 |
-| 阿姆斯特丹 | `meikai-ams` | `ams` | DC2、DC4 |
-| 新加坡 | `meikai-sgp` | `sgp` | DC5 |
+| 迈阿密 | `meiguan-mia` | `mia` | DC1、DC3 |
+| 阿姆斯特丹 | `meiguan-ams` | `ams` | DC2、DC4 |
+| 新加坡 | `meiguan-sgp` | `sgp` | DC5 |
 
 主体通过 SSH 调用节点，主机名必须是上表这三个。节点建议放在靠近对应数据中心的地区。
 
@@ -86,14 +86,14 @@ meiguan 是一套自己部署的 Telegram 红包助手。私聊机器人打开�
 apt update
 apt install -y git python3 python3-venv python3-pip ca-certificates curl
 timedatectl set-timezone Asia/Shanghai
-git clone https://github.com/shuaiqideyu/meiguan.git /opt/meikai
-cd /opt/meikai
+git clone https://github.com/shuaiqideyu/meiguan.git /opt/meiguan
+cd /opt/meiguan
 python3 -m venv .venv
 .venv/bin/pip install -U pip
 .venv/bin/pip install -e .
 ```
 
-用 `pip install -e .`。管理页从 `/opt/meikai/web/dist` 读取，可编辑安装才对得上这个路径。
+用 `pip install -e .`。管理页从 `/opt/meiguan/web/dist` 读取，可编辑安装才对得上这个路径。
 
 ## 节点
 
@@ -102,13 +102,13 @@ python3 -m venv .venv
 安装浏览器：
 
 ```bash
-cd /opt/meikai
+cd /opt/meiguan
 .venv/bin/playwright install-deps chromium
 .venv/bin/playwright install chromium
 .venv/bin/patchright install chromium
 ```
 
-写入 `/opt/meikai/.env`：
+写入 `/opt/meiguan/.env`：
 
 ```
 NODE_ID=mia
@@ -128,10 +128,10 @@ API_HASH=
 其他人的打码 token 在管理页填写。
 
 ```bash
-chmod 600 /opt/meikai/.env
-cp /opt/meikai/deploy/meikai-node.service /etc/systemd/system/
+chmod 600 /opt/meiguan/.env
+cp /opt/meiguan/deploy/meiguan-node.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now meikai-node
+systemctl enable --now meiguan-node
 ```
 
 节点不填 `BOT_TOKEN`。
@@ -151,12 +151,12 @@ ss -ltnp | grep 6379
 构建管理页：
 
 ```bash
-cd /opt/meikai/web
+cd /opt/meiguan/web
 npm ci
 npm run build
 ```
 
-写入 `/opt/meikai/.env`：
+写入 `/opt/meiguan/.env`：
 
 ```
 BOT_TOKEN=
@@ -169,13 +169,13 @@ WEB_PORT=8780
 把 `WEB_ORIGIN` 换成你的地址，不要末尾斜杠。它必须和隧道里的主机名一致。`AUTHOR_ID` 填作者的数字 id。
 
 ```bash
-chmod 600 /opt/meikai/.env
-cp /opt/meikai/deploy/meikai.service /etc/systemd/system/
+chmod 600 /opt/meiguan/.env
+cp /opt/meiguan/deploy/meiguan.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now meikai
+systemctl enable --now meiguan
 ```
 
-服务通过 systemd 的 `EnvironmentFile` 读取 `/opt/meikai/.env`。文件里写 `KEY=value`，不要加 `export`，也不要加引号。
+服务通过 systemd 的 `EnvironmentFile` 读取 `/opt/meiguan/.env`。文件里写 `KEY=value`，不要加 `export`，也不要加引号。
 
 ### 登录节点
 
@@ -184,30 +184,30 @@ systemctl enable --now meikai
 `/root/.ssh/config`：
 
 ```
-Host meikai-mia
+Host meiguan-mia
   HostName 迈阿密节点的地址
   User root
-  IdentityFile /root/.ssh/meikai_nodes
+  IdentityFile /root/.ssh/meiguan_nodes
 
-Host meikai-ams
+Host meiguan-ams
   HostName 阿姆斯特丹节点的地址
   User root
-  IdentityFile /root/.ssh/meikai_nodes
+  IdentityFile /root/.ssh/meiguan_nodes
 
-Host meikai-sgp
+Host meiguan-sgp
   HostName 新加坡节点的地址
   User root
-  IdentityFile /root/.ssh/meikai_nodes
+  IdentityFile /root/.ssh/meiguan_nodes
 ```
 
 ```bash
-chmod 600 /root/.ssh/config /root/.ssh/meikai_nodes
-ssh meikai-mia hostname
-ssh meikai-ams hostname
-ssh meikai-sgp hostname
+chmod 600 /root/.ssh/config /root/.ssh/meiguan_nodes
+ssh meiguan-mia hostname
+ssh meiguan-ams hostname
+ssh meiguan-sgp hostname
 ```
 
-三条都通再重启主体。主体在节点上执行的是 `/opt/meikai/.venv/bin/python -m meikai.rpc_client`。
+三条都通再重启主体。主体在节点上执行的是 `/opt/meiguan/.venv/bin/python -m meiguan.rpc_client`。
 
 ### 隧道
 
@@ -222,23 +222,23 @@ ARM 改用 `cloudflared-linux-arm64.deb`。
 
 ```bash
 cloudflared tunnel login
-cloudflared tunnel create meikai
-cloudflared tunnel route dns meikai hb.example.com
+cloudflared tunnel create meiguan
+cloudflared tunnel route dns meiguan hb.example.com
 ```
 
 `hb.example.com` 换成你的主机名。`tunnel login` 会给出一个地址，在浏览器里打开，选中你的域名。`tunnel create` 会打印凭据文件，一般在 `/root/.cloudflared/<隧道 id>.json`。
 
 ```bash
-cp /opt/meikai/deploy/cloudflared.yml.example /opt/meikai/cloudflared.yml
+cp /opt/meiguan/deploy/cloudflared.yml.example /opt/meiguan/cloudflared.yml
 ```
 
-编辑 `/opt/meikai/cloudflared.yml`，填上隧道 id、凭据路径和主机名。主机名等于 `WEB_ORIGIN` 去掉 `https://` 的部分。这个文件已在 `.gitignore` 中。
+编辑 `/opt/meiguan/cloudflared.yml`，填上隧道 id、凭据路径和主机名。主机名等于 `WEB_ORIGIN` 去掉 `https://` 的部分。这个文件已在 `.gitignore` 中。
 
 ```bash
-chmod 600 /opt/meikai/cloudflared.yml
-cp /opt/meikai/deploy/meikai-tunnel.service /etc/systemd/system/
+chmod 600 /opt/meiguan/cloudflared.yml
+cp /opt/meiguan/deploy/meiguan-tunnel.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now meikai-tunnel
+systemctl enable --now meiguan-tunnel
 ```
 
 ## 使用
@@ -252,7 +252,7 @@ systemctl enable --now meikai-tunnel
 四台都执行：
 
 ```bash
-cd /opt/meikai
+cd /opt/meiguan
 git pull --ff-only
 .venv/bin/pip install -e .
 ```
@@ -260,16 +260,16 @@ git pull --ff-only
 主体的页面有改动时：
 
 ```bash
-cd /opt/meikai/web
+cd /opt/meiguan/web
 npm ci
 npm run build
-systemctl restart meikai
+systemctl restart meiguan
 ```
 
 节点：
 
 ```bash
-systemctl restart meikai-node
+systemctl restart meiguan-node
 ```
 
 改了 `deploy/` 里的单元文件后，重新复制到 `/etc/systemd/system/`，再执行 `systemctl daemon-reload`。
@@ -277,17 +277,17 @@ systemctl restart meikai-node
 ## 日志
 
 ```bash
-systemctl status meikai
-journalctl -u meikai -n 80 --no-pager
-journalctl -u meikai-node -n 80 --no-pager
-journalctl -u meikai-tunnel -n 80 --no-pager
+systemctl status meiguan
+journalctl -u meiguan -n 80 --no-pager
+journalctl -u meiguan-node -n 80 --no-pager
+journalctl -u meiguan-tunnel -n 80 --no-pager
 ```
 
 日志里出现 `缺少 BOT_TOKEN`、`缺少 WEB_ORIGIN` 或 `缺少 AUTHOR_ID`，说明主体没读到 `.env`。
 
 页面显示「页面还没构建」时，在主体的 `web/` 里重新 `npm run build`。
 
-页面上节点一直离线时，先在主体执行 `ssh meikai-mia`、`ssh meikai-ams`、`ssh meikai-sgp`。SSH 通了再看对应节点的日志。
+页面上节点一直离线时，先在主体执行 `ssh meiguan-mia`、`ssh meiguan-ams`、`ssh meiguan-sgp`。SSH 通了再看对应节点的日志。
 
 ## 不要放进仓库
 

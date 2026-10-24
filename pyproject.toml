@@ -1,5 +1,5 @@
 [project]
-name = "meikai"
+name = "meiguan"
 version = "0.1.0"
 description = "主体运行 bot。节点按 DC 托管账号。"
 requires-python = ">=3.11"
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-meikai = "meikai.__main__:main"
+meiguan = "meiguan.__main__:main"
 
 [build-system]
 requires = ["setuptools>=68"]

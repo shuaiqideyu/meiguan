@@ -1,4 +1,4 @@
-# 复制为 /opt/meikai/cloudflared.yml。隧道 id 和凭据文件不要提交。
+# 复制为 /opt/meiguan/cloudflared.yml。隧道 id 和凭据文件不要提交。
 tunnel: replace-with-tunnel-id
 credentials-file: /root/.cloudflared/replace-with-tunnel-id.json
 ingress:

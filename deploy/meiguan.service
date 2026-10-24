@@ -1,0 +1,17 @@
+[Unit]
+Description=meiguan bot
+After=network-online.target redis-server.service
+Wants=network-online.target redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/meiguan
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/meiguan/.env
+ExecStart=/opt/meiguan/.venv/bin/python -m meiguan
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
