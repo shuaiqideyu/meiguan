@@ -1,6 +1,6 @@
-# meikai
+# meiguan
 
-meikai 在 Telegram 里代为领取红包。一台主体跑机器人和管理页，三台节点按数据中心登录账号。私聊机器人即可使用，群里不回复。
+meiguan 在 Telegram 里代为领取红包。一台主体跑机器人和管理页，三台节点按数据中心登录账号。私聊机器人即可使用，群里不回复。
 
 作者 [@yuuu](https://t.me/yuuu)
 
@@ -37,7 +37,7 @@ meikai 在 Telegram 里代为领取红包。一台主体跑机器人和管理页
 apt update
 apt install -y git python3 python3-venv python3-pip ca-certificates curl
 timedatectl set-timezone Asia/Shanghai
-git clone https://github.com/shuaiqideyu/meikai-public.git /opt/meikai
+git clone https://github.com/shuaiqideyu/meiguan.git /opt/meikai
 cd /opt/meikai
 python3 -m venv .venv
 .venv/bin/pip install -U pip
