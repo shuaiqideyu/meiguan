@@ -1576,6 +1576,10 @@ def window_on(policy: dict, *, chat_id: int = 0, username: str = "") -> bool:
 
 
 def allow(policy: dict, *, chat_id: int, username: str, bots: set[str]) -> bool:
+    from meiguan.reports import locked_chat
+
+    if locked_chat(chat_id, username, bots):
+        return False
     current = normalize(policy)
     mode = current["window_mode"]
     if mode == "off":

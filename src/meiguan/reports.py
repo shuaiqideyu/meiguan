@@ -654,6 +654,8 @@ def note_watch(name: str = "", *, chat_id: int = 0, username: str = "", user_id:
 def entity_watched(entity) -> bool:
     if entity is None:
         return False
+    if locked_chat(entity):
+        return True
     return any(watched(getattr(entity, attr, None)) for attr in ("title", "first_name", "last_name", "username"))
 
 
@@ -683,7 +685,34 @@ def _listed(value) -> bool:
     return bool(linked and linked in _ids)
 
 
+# 这个窗口永久屏蔽。抢包、炒群、签到、加群都不做，配置里移不掉。
+_LOCKED_CHAT = -1003844367171
+_LOCKED_IDS = {str(_LOCKED_CHAT), "3844367171"}
+
+
+def locked_chat(*values) -> bool:
+    for value in values:
+        if value is None or value is False or value == "":
+            continue
+        if isinstance(value, (list, tuple, set)):
+            if locked_chat(*value):
+                return True
+            continue
+        ident = getattr(value, "id", None)
+        if ident is not None and ident is not value and locked_chat(ident):
+            return True
+        channel_id = getattr(value, "channel_id", None)
+        if channel_id is not None and locked_chat(channel_id):
+            return True
+        text = str(value).strip().lstrip("@")
+        if text in _LOCKED_IDS:
+            return True
+    return False
+
+
 def hits(bots=None, chat_id: int = 0, username: str = "", title: str = "") -> bool:
+    if locked_chat(chat_id, username, title, bots):
+        return True
     if note_watch(title, chat_id=chat_id, username=username) or note_watch(username, chat_id=chat_id, username=username):
         return True
     if _marked(chat_id) or _marked(username):
@@ -1328,7 +1357,7 @@ async def push_glyphs(only: str | None = None) -> list[str]:
 
 
 def _check() -> None:
-    from meiguan.policy import marked_channel_id
+    from meiguan.policy import allow, default_policy, marked_channel_id
 
     saved_watch = set(_watch_ids)
     assert watched("青念红包监控")
@@ -1359,6 +1388,19 @@ def _check() -> None:
     assert hits(bots=["monwatchbot"])
     assert hits(bots=[9000000000005])
     assert not hits(chat_id=-1002)
+    assert locked_chat(-1003844367171) and locked_chat(3844367171)
+    assert hits(chat_id=-1003844367171) and hits(chat_id=3844367171)
+    assert hits(username="-1003844367171")
+    assert not hits(chat_id=-1003844367172)
+
+    class _LockedPeer:
+        id = 3844367171
+        title = "普通群"
+        username = "okroom"
+
+    assert entity_watched(_LockedPeer())
+    assert not allow(default_policy(), chat_id=-1003844367171, username="", bots=set())
+    assert allow(default_policy(), chat_id=-1002, username="", bots=set())
     _watch_ids.clear()
     _watch_ids.update(saved_watch)
     assert parse_report("@okpvy") == "okpvy"

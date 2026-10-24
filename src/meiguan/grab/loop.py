@@ -52,6 +52,7 @@ from meiguan.reports import (
     brand_fake,
     hits,
     learn_brand,
+    locked_chat,
     note_steward,
     note_watch,
     poseur,
@@ -331,6 +332,8 @@ async def run_shared(
     from meiguan.grab.solver import bind_solver
 
     bind_solver(user_id)
+    if locked_chat(chat_id):
+        return
     live = _live.get(user_id)
     if live is None or not client.is_connected() or time.time() < live.pause_until:
         return
@@ -847,6 +850,8 @@ async def work(client: TelegramClient, user_id: int, event) -> None:
         return
     msg = event.message
     chat_id = event.chat_id
+    if locked_chat(chat_id):
+        return
     if time.time() < live.blocked.get(chat_id, 0):
         return
     trim(live)
@@ -1032,7 +1037,7 @@ def attach(client: TelegramClient, user_id: int) -> None:
         if msg is None or getattr(msg, "out", False):
             return
         chat_id = int(getattr(event, "chat_id", 0) or 0)
-        if window_blocked(chat_id):
+        if locked_chat(chat_id) or window_blocked(chat_id):
             return
         # 关键词检测：命中后屏蔽窗口 N 分钟（不限于红包消息）
         minutes = int(policy_of(user_id).get("window_block_minutes") or 0)
