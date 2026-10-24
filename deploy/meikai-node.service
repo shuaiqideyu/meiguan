@@ -1,0 +1,21 @@
+[Unit]
+Description=meikai telethon node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/meikai
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/meikai/.env
+RuntimeDirectory=meikai
+ExecStart=/opt/meikai/.venv/bin/python -m meikai.node_worker
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+MemoryMax=75%
+MemorySwapMax=256M
+OOMScoreAdjust=200
+
+[Install]
+WantedBy=multi-user.target

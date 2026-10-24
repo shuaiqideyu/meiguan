@@ -1,0 +1,28 @@
+[project]
+name = "meikai"
+version = "0.1.0"
+description = "主体运行 bot。节点按 DC 托管账号。"
+requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot>=22,<23",
+    "telethon>=1.40,<2",
+    "qrcode>=7,<9",
+    "pillow>=10",
+    "redis>=5,<6",
+    "httpx>=0.27,<1",
+    "playwright>=1.49,<2",
+    "aiohttp>=3.10,<4",
+    "curl-cffi>=0.16,<1",
+    "patchright>=1.64,<2",
+    "cryptography>=42,<51",
+]
+
+[project.scripts]
+meikai = "meikai.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

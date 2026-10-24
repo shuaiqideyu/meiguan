@@ -1,0 +1,7 @@
+# 复制为 /opt/meikai/cloudflared.yml。隧道 id 和凭据文件不要提交。
+tunnel: replace-with-tunnel-id
+credentials-file: /root/.cloudflared/replace-with-tunnel-id.json
+ingress:
+  - hostname: hb.example.com
+    service: http://127.0.0.1:8780
+  - service: http_status:404

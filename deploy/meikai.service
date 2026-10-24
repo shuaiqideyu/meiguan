@@ -1,0 +1,17 @@
+[Unit]
+Description=meikai bot
+After=network-online.target redis-server.service
+Wants=network-online.target redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/meikai
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/meikai/.env
+ExecStart=/opt/meikai/.venv/bin/python -m meikai
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
