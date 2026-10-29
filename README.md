@@ -1,6 +1,10 @@
 # meiguan
 
-meiguan 是一套自己部署的 Telegram 红包助手。私聊机器人打开管理页，用自己的账号领取红包、屏蔽窗口、查看记录，也可以在指定的群里炒群和签到。
+meiguan（没关）是自己部署的 Telegram 自动抢红包脚本。项目名叫 meiguan，意思是没关：用自己的账号监听群组和频道，看到红包就领取。
+
+私聊机器人打开管理页。可以挂多个账号，按类型开关领取，屏蔽窗口，设置个数和金额下限，查看领取记录，也可以在指定的群里炒群和签到。
+
+以前的仓库 [telegram-auto-redpacket](https://github.com/shuaiqideyu/telegram-auto-redpacket) 已停止维护。那份也是 Telegram 自动抢红包脚本，后续只在 meiguan 继续。
 
 作者 [@yuuu](https://t.me/yuuu)
 
