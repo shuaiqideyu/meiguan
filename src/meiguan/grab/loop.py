@@ -11,7 +11,7 @@ from telethon import TelegramClient, events
 from telethon.tl.functions.channels import GetChannelsRequest
 from telethon.tl.functions.messages import GetChatsRequest
 from telethon.tl.functions.users import GetFullUserRequest, GetUsersRequest
-from telethon.tl.types import InputChannel, InputPeerChannel, InputPeerChat, InputPeerUser, InputUser
+from telethon.tl.types import InputChannel, InputPeerChannel, InputPeerChat, InputPeerUser, InputUser, User
 
 from meiguan.grab.chat import _answers
 from meiguan.grab.detect import (
@@ -23,6 +23,8 @@ from meiguan.grab.detect import (
     claim_taken,
     packet_amount,
     packet_from_url,
+    listen_facts,
+    lock_wait,
     packet_slots,
     raw_text,
     resolve_wallet,
@@ -38,6 +40,7 @@ from meiguan.policy import (
     account_paused,
     account_watches,
     allow,
+    block_user_hit,
     below_amount,
     hours_open,
     mode_delay_for,
@@ -140,21 +143,35 @@ def finish(user_id: int, chat_id: int, msg_id: int) -> None:
 _skipped: set[tuple] = set()
 
 
-def _tell_watch(user_id: int, kind: str, shown: str, title: str) -> None:
+_heard: set[tuple] = set()
+_locked_wait: dict[tuple, int] = {}
+
+
+def emit_listen(user_id: int, msg, rp, *, chat_id: int, msg_id: int, title: str, username: str, phase: str, lock_seconds: int = 0) -> None:
     from meiguan.node_host import accounts, add_watch
 
     row = accounts.get(str(user_id)) or {}
     owner = int(row.get("owner_id") or 0)
     if not owner:
         return
-    add_watch({
+    mark = (owner, int(chat_id), int(msg_id), phase)
+    if mark in _heard:
+        return
+    _heard.add(mark)
+    if len(_heard) > 4000:
+        _heard.clear()
+        _heard.add(mark)
+    facts = listen_facts(msg, rp, chat_id=chat_id, msg_id=msg_id, title=title, username=username)
+    facts.update({
         "owner_id": owner,
         "watch": True,
-        "name": str(row.get("name") or "")[:40],
-        "amount": " ".join(str(shown or "").split())[:40],
-        "title": " ".join(str(title or "").split())[:40],
-        "kind": _LABELS.get(kind, ""),
+        "listen": True,
+        "phase": phase,
+        "chat_id": int(chat_id),
+        "msg_id": int(msg_id),
+        "lock_seconds": max(0, int(lock_seconds or 0)),
     })
+    add_watch(facts)
 
 
 def note_skip(user_id: int, chat_id: int, msg_id: int, reason: str, detail: str = "") -> None:
@@ -372,7 +389,6 @@ async def run_shared(
             return
         if account_watches(policy, user_id):
             live.done.add(kind_key)
-            _tell_watch(user_id, rp.kind, packet, seen_title)
             return
         names = list(targets or [])
         if not names:
@@ -919,6 +935,15 @@ async def work(client: TelegramClient, user_id: int, event) -> None:
                 share(user_id, chat_id, msg.id, rp, wallet, shown, username, bots, targets)
         slots = packet_slots(raw_text(msg))
         policy = policy_of(user_id)
+        lock_key = (owner_of(user_id), int(chat_id), int(msg.id))
+        if lock_key in _locked_wait and account_watches(policy, user_id):
+            live.done.add(kind_key)
+            emit_listen(
+                user_id, msg, rp,
+                chat_id=chat_id, msg_id=msg.id, title=seen_title, username=username,
+                phase="unlock", lock_seconds=_locked_wait.pop(lock_key, 0),
+            )
+            return
         if below_amount(policy, shown, slots):
             live.done.add(kind_key)
             note_skip(user_id, chat_id, msg.id, "floor", "低于领取阈值")
@@ -929,7 +954,11 @@ async def work(client: TelegramClient, user_id: int, event) -> None:
             return
         if account_watches(policy, user_id):
             live.done.add(kind_key)
-            _tell_watch(user_id, rp.kind, shown, seen_title)
+            emit_listen(
+                user_id, msg, rp,
+                chat_id=chat_id, msg_id=msg.id, title=seen_title, username=username,
+                phase="open",
+            )
             return
         await pause_for(user_id, targets, rp.kind)
         if not hours_open(policy_of(user_id)):
@@ -1026,6 +1055,56 @@ def keyword_hit(user_id: int, text: str) -> bool:
     return any(kw and kw in body for kw in keywords)
 
 
+def message_sender(msg) -> tuple[int, str]:
+    sender_id = int(getattr(msg, "sender_id", 0) or 0)
+    sender = getattr(msg, "sender", None)
+    if isinstance(sender, User):
+        return sender_id, str(getattr(sender, "username", None) or "")
+    if sender is not None:
+        return 0, ""
+    if sender_id > 0:
+        return sender_id, ""
+    return 0, ""
+
+
+def user_probe_hit(user_id: int, msg) -> bool:
+    """指定用户发出含对应内容的消息。"""
+    rules = policy_of(user_id).get("window_block_users") or []
+    if not rules:
+        return False
+    sender_id, username = message_sender(msg)
+    return block_user_hit(rules, sender_id, username, raw_text(msg))
+
+
+async def _listen_locked(client, user_id: int, event, msg) -> None:
+    chat_id = int(getattr(event, "chat_id", 0) or 0)
+    if not chat_id or window_blocked(chat_id) or not client.is_connected():
+        return
+    username, seen_title = await window_face(event, user_id)
+    if not seen_title:
+        seen_title = _titles.get(chat_id) or ""
+    keep_title(chat_id, seen_title)
+    bots = packet_bots(msg, None)
+    if hits(bots, chat_id, username, title=seen_title) or watch_bots(msg) or poseur_message(msg):
+        return
+    if not allow(policy_of(user_id), chat_id=chat_id, username=username, bots=bots):
+        return
+    shown = packet_amount(msg)
+    if below_amount(policy_of(user_id), shown, packet_slots(raw_text(msg))):
+        return
+    key = (owner_of(user_id), chat_id, int(msg.id))
+    seconds = lock_wait(raw_text(msg))
+    _locked_wait[key] = seconds
+    if len(_locked_wait) > 2000:
+        _locked_wait.clear()
+        _locked_wait[key] = seconds
+    emit_listen(
+        user_id, msg, RedPacket("locked"),
+        chat_id=chat_id, msg_id=int(msg.id), title=seen_title, username=username,
+        phase="locked", lock_seconds=seconds,
+    )
+
+
 def attach(client: TelegramClient, user_id: int) -> None:
     if getattr(client, "_meiguan_grab", False):
         return
@@ -1039,12 +1118,19 @@ def attach(client: TelegramClient, user_id: int) -> None:
         chat_id = int(getattr(event, "chat_id", 0) or 0)
         if locked_chat(chat_id) or window_blocked(chat_id):
             return
-        # 关键词检测：命中后屏蔽窗口 N 分钟（不限于红包消息）
+        # 关键词或指定用户：命中后屏蔽窗口 N 分钟（不限于红包消息）
         minutes = int(policy_of(user_id).get("window_block_minutes") or 0)
-        if minutes > 0 and keyword_hit(user_id, raw_text(msg)):
-            block_window(chat_id, minutes)
-            log.info("节点：命中屏蔽关键词，屏蔽窗口 %s 分钟 chat=%s", minutes, chat_id)
-            return
+        if minutes > 0:
+            by_keyword = keyword_hit(user_id, raw_text(msg))
+            by_user = user_probe_hit(user_id, msg)
+            if by_keyword or by_user:
+                block_window(chat_id, minutes)
+                if by_user:
+                    sender_id, _username = message_sender(msg)
+                    log.info("节点：指定用户命中，屏蔽窗口 %s 分钟 chat=%s sender=%s", minutes, chat_id, sender_id)
+                else:
+                    log.info("节点：命中屏蔽关键词，屏蔽窗口 %s 分钟 chat=%s", minutes, chat_id)
+                return
         if not getattr(msg, "reply_markup", None):
             return
         known = _titles.get(chat_id)
@@ -1053,7 +1139,12 @@ def attach(client: TelegramClient, user_id: int) -> None:
         if not accept_packet(msg):
             return
         rp = classify(msg)
-        if rp is None or rp.kind == "locked" or not mode_on(user_id, rp.kind):
+        watching = account_watches(policy_of(user_id), user_id)
+        announced = watching and (owner_of(user_id), chat_id, int(msg.id)) in _locked_wait
+        if rp is not None and rp.kind == "locked" and watching:
+            asyncio.create_task(_listen_locked(client, user_id, event, msg))
+            return
+        if rp is None or rp.kind == "locked" or (not mode_on(user_id, rp.kind) and not announced):
             return
         if account_paused(policy_of(user_id), user_id) and not account_watches(policy_of(user_id), user_id):
             return

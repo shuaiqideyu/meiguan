@@ -852,8 +852,153 @@ _SLOTS = re.compile(
 def packet_slots(text: str) -> str:
     matched = _SLOTS.search(text or "")
     if not matched:
+        matched = re.search(r"(\d+)\s*/\s*(\d+)\s*张", text or "")
+    if not matched:
         return ""
     return f"{matched.group(1)}/{matched.group(2)}"
+
+
+def view_link(chat_id: int, msg_id: int, username: str) -> str:
+    name = str(username or "").strip().lstrip("@")
+    if name and "/" not in name and " " not in name:
+        return f"https://t.me/{name}/{int(msg_id)}"
+    number = str(int(chat_id or 0))
+    if number.startswith("-100"):
+        return f"https://t.me/c/{number[4:]}/{int(msg_id)}"
+    return ""
+
+
+def claim_link(msg) -> str:
+    for row in rows(msg):
+        for btn in row.buttons:
+            url = button_url(btn).strip()
+            low = url.lower()
+            if "startapp=" not in low and "start=" not in low:
+                continue
+            if "t.me/" not in low and "telegram.me/" not in low:
+                continue
+            if low.startswith("http://"):
+                url = "https://" + url[7:]
+            if url.lower().startswith("https://"):
+                return url[:500]
+    return ""
+
+
+_LOCK_WAIT = re.compile(r"(?:(\d+)\s*分(?:钟)?)?\s*(\d+)\s*秒")
+
+
+def lock_wait(text: str) -> int:
+    body = text or ""
+    matched = _LOCK_WAIT.search(body)
+    if matched is None or "后可领" not in body and "解锁" not in body:
+        return 0
+    minutes = int(matched.group(1) or 0)
+    seconds = int(matched.group(2) or 0)
+    return minutes * 60 + seconds
+
+
+def _clip_line(text: str, limit: int = 28) -> str:
+    line = " ".join(str(text or "").split())
+    if len(line) <= limit:
+        return line
+    return line[: limit - 1] + "..."
+
+
+def limit_lines(text: str) -> list[str]:
+    found = []
+    if member_only(text):
+        found.append("Telegram 会员")
+    for name in follow_names(text):
+        line = _clip_line(f"须加入 {name}")
+        if line not in found:
+            found.append(line)
+    for raw in (text or "").splitlines():
+        line = " ".join(raw.split())
+        if not line or line.startswith("http"):
+            continue
+        if not any(word in line for word in ("仅限", "须加入", "今日发言", "所需今日发言", "发言:", "发言：")):
+            continue
+        line = _clip_line(line)
+        if line not in found:
+            found.append(line)
+        if len(found) >= 4:
+            break
+    return found[:4]
+
+
+def wallet_face(msg) -> tuple[str, str]:
+    entities = []
+    sender = getattr(msg, "sender", None)
+    if getattr(sender, "bot", False):
+        entities.append(sender)
+    via = getattr(msg, "via_bot", None)
+    if via is not None:
+        entities.append(via)
+    for entity in entities:
+        user = str(getattr(entity, "username", None) or "").strip().lstrip("@")
+        title = " ".join(
+            part for part in (
+                str(getattr(entity, "first_name", None) or "").strip(),
+                str(getattr(entity, "last_name", None) or "").strip(),
+            ) if part
+        )
+        if user or title:
+            return title[:40], user[:32]
+    return "", wallet_of(msg)[:32]
+
+
+def _coupon_amount(text: str) -> str:
+    for raw in (text or "").splitlines():
+        line = " ".join(raw.split())
+        if "券" in line and "红包" not in line:
+            return line[:60]
+    return "能量券"
+
+
+def _web_packet(msg, rp) -> bool:
+    if rp is not None and getattr(rp, "kind", "") in ("webapp", "cloudflare"):
+        return True
+    for row in rows(msg):
+        for btn in row.buttons:
+            if is_webview(btn) or "startapp=" in button_url(btn).lower():
+                return True
+    return False
+
+
+def listen_facts(msg, rp, *, chat_id: int, msg_id: int, title: str, username: str) -> dict:
+    body = raw_text(msg)
+    wallet_title, wallet_user = wallet_face(msg)
+    coupon = is_coupon(msg)
+    amount = packet_amount(msg)
+    if coupon and not amount:
+        amount = _coupon_amount(body)
+    slots = packet_slots(body)
+    locked = rp is not None and getattr(rp, "kind", "") == "locked"
+    expr = ""
+    answer = ""
+    phrase = ""
+    if rp is not None and getattr(rp, "kind", "") == "captcha":
+        expr = " ".join(str(getattr(rp, "expr", "") or "").split())[:80]
+        if expr:
+            answer = str(solve_expr(expr) or "")[:40]
+    if rp is not None and getattr(rp, "kind", "") == "phrase":
+        phrase = " ".join(str(getattr(rp, "start", "") or "").split())[:40]
+    return {
+        "title": " ".join(str(title or "").split())[:80],
+        "wallet_title": wallet_title,
+        "wallet_user": wallet_user,
+        "amount": " ".join(str(amount or "").split())[:60],
+        "slots": slots[:20],
+        "coupon": coupon,
+        "web": _web_packet(msg, rp),
+        "expr": expr,
+        "answer": answer,
+        "phrase": phrase,
+        "locked": locked,
+        "limits": [] if locked else limit_lines(body),
+        "view_url": view_link(chat_id, msg_id, username),
+        "claim_url": claim_link(msg),
+    }
 
 
 async def claim_slots(client, chat_id: int, msg_id: int) -> str:
@@ -1020,6 +1165,28 @@ class _Bare:
         self.reply_markup = None
 
 
+assert view_link(-1001975935870, 2431568, "") == "https://t.me/c/1975935870/2431568"
+assert view_link(-1001, 9, "room") == "https://t.me/room/9"
+assert lock_wait("15秒后可领取") == 15
+assert lock_wait("1分20秒后可领") == 80
+assert lock_wait("普通 15秒") == 0
+assert limit_lines("仅限群组成员领取 【成交老板交流群】\n所需今日发言: 5")[0].startswith("仅限")
+assert "Telegram 会员" in limit_lines("仅限 Premium 会员")
+
+
+class _ListenMsg:
+    def __init__(self):
+        self.message = "发送了一个红包\n总金额: 300 USDT\n剩余: 0/35\n15秒后可领取"
+        self.sender = _Name("FLLQB")
+        self.sender.first_name = "法拉利钱包"
+        self.via_bot = None
+        self.reply_markup = None
+
+
+_listen = listen_facts(_ListenMsg(), RedPacket("locked"), chat_id=-1004451398387, msg_id=32719, title="Cx大家庭", username="")
+assert _listen["wallet_title"] == "法拉利钱包" and _listen["wallet_user"] == "FLLQB"
+assert _listen["amount"] == "300 USDT" and _listen["slots"] == "0/35" and _listen["locked"]
+assert _listen["view_url"] == "https://t.me/c/4451398387/32719" and _listen["claim_url"] == ""
 assert wallet_of(_Bare(via=_Name("HX20"))) == "hx20"
 assert wallet_of(_Bare(sender=_Name("fllqb"))) == "fllqb"
 assert wallet_of(_Bare(sender=_Name("alice", bot=False))) == ""

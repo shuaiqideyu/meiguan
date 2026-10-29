@@ -107,6 +107,7 @@ export interface Policy {
   auto_receive: boolean
   window_block_keywords: string[]
   window_block_minutes: number
+  window_block_users?: BlockUser[]
   web_pay: { fll: boolean; cf: boolean }
   pay_ready?: { fll: boolean; cf: boolean }
   pay_admin?: boolean
@@ -114,6 +115,12 @@ export interface Policy {
   hide_zero: boolean
   show_min: Record<string, string>
   paused: number[]
+}
+
+export interface BlockUser {
+  user_id?: number
+  username?: string
+  texts: string[]
 }
 
 export interface Account {

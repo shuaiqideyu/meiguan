@@ -238,7 +238,7 @@ async function run(item: Account, body: Record<string, unknown>) {
           <t-button theme="primary" variant="outline" @click="testNotice">测试</t-button>
           <t-button v-if="home.notify.bound" theme="danger" variant="outline" @click="clearNotice">停用</t-button>
         </div>
-        <p class="hint one">勾选后，这个号听到红包只发通知，不点。</p>
+        <p class="hint one">勾选后，听到红包就私信，不点。</p>
         <p v-if="!home.notify.bound" class="hint one">先添加通知机器人，再选账号。</p>
         <div v-if="listed.length" class="notice-accounts">
           <div v-for="item in listed" :key="item.user_id" class="notice-row">

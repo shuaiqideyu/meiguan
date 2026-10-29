@@ -69,6 +69,7 @@ from meiguan.policy import (
     set_hot_speak,
     set_mode_delay,
     set_pay_keys,
+    clean_block_users,
     present_policy,
     set_running,
     set_show_min,
@@ -737,6 +738,11 @@ async def _patch_policy(owner_id: int, body: dict) -> web.Response:
             policy["window_block_minutes"] = max(0, min(int(body.get("window_block_minutes")), 1440))
         except (TypeError, ValueError):
             policy["window_block_minutes"] = 0
+    if "window_block_users" in body:
+        users, error = clean_block_users(body.get("window_block_users"))
+        if error:
+            return fail(400, "window", error)
+        policy["window_block_users"] = users
     if "open_at" in body or "close_at" in body:
         policy, error = set_hours(
             policy,

@@ -100,6 +100,7 @@ def default_policy() -> dict:
         "auto_receive": True,
         "window_block_keywords": [],
         "window_block_minutes": 0,
+        "window_block_users": [],
         "pay_keys": {},
         "phrase_say": {"low": 0, "high": 0},
         "watch": [],
@@ -285,6 +286,119 @@ def _dedupe_hot(items: list[dict]) -> list[dict]:
     return kept
 
 
+_BLOCK_USERS = 100
+_BLOCK_TEXTS = 20
+_BLOCK_TEXT = 80
+
+
+def _block_who(item: dict) -> tuple[int, str, str]:
+    user_id = _number(item.get("user_id"))
+    username = _username(item.get("username"))
+    who = str(item.get("user") or "").strip()
+    if who:
+        bare = who.strip().lstrip("@")
+        number = _number(bare)
+        if number is not None:
+            user_id = number
+        else:
+            username = _username(bare)
+            if not username:
+                return 0, "", "主体：用户写成 @用户名或数字 id"
+    if user_id is not None and user_id < 0:
+        return 0, "", "主体：用户写成 @用户名或数字 id"
+    if not user_id and not username:
+        return 0, "", "主体：用户写成 @用户名或数字 id"
+    return int(user_id or 0), username, ""
+
+
+def _block_texts(raw) -> tuple[list[str], str]:
+    if isinstance(raw, str):
+        parts = [part.strip() for part in raw.replace("，", ",").replace("\n", ",").split(",")]
+    elif isinstance(raw, list):
+        parts = [str(part).strip() for part in raw]
+    else:
+        parts = []
+    texts = []
+    seen = set()
+    for piece in parts:
+        if not piece or piece in seen:
+            continue
+        if len(piece) > _BLOCK_TEXT:
+            return [], "主体：单条内容请写在 80 字以内"
+        seen.add(piece)
+        texts.append(piece)
+        if len(texts) > _BLOCK_TEXTS:
+            return [], "主体：每个用户的内容请写在 20 条以内"
+    if not texts:
+        return [], "主体：内容不能空"
+    return texts, ""
+
+
+def clean_block_users(raw) -> tuple[list[dict], str]:
+    if raw is None:
+        return [], ""
+    if not isinstance(raw, list):
+        return [], "主体：用户名单无法识别"
+    kept: list[dict] = []
+    index: dict[tuple, int] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            return [], "主体：用户名单无法识别"
+        user_id, username, error = _block_who(item)
+        if error:
+            return [], error
+        texts, error = _block_texts(item.get("texts") if "texts" in item else item.get("text"))
+        if error:
+            return [], error
+        key = ("id", user_id) if user_id else ("name", username.lower())
+        slot = index.get(key)
+        if slot is not None:
+            row = kept[slot]
+            seen = set(row["texts"])
+            for piece in texts:
+                if piece in seen:
+                    continue
+                if len(row["texts"]) >= _BLOCK_TEXTS:
+                    return [], "主体：每个用户的内容请写在 20 条以内"
+                row["texts"].append(piece)
+                seen.add(piece)
+            if username and not row.get("username"):
+                row["username"] = username
+            continue
+        if len(kept) >= _BLOCK_USERS:
+            return [], "主体：用户请写在 100 个以内"
+        row = {"texts": texts}
+        if user_id:
+            row["user_id"] = user_id
+        if username:
+            row["username"] = username
+        index[key] = len(kept)
+        kept.append(row)
+    return kept, ""
+
+
+def block_user_hit(rules, sender_id: int, username: str, text: str) -> bool:
+    body = text or ""
+    if not body or not rules:
+        return False
+    try:
+        number = int(sender_id or 0)
+    except (TypeError, ValueError):
+        number = 0
+    name = str(username or "").strip().lstrip("@").lower()
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        rid = int(rule.get("user_id") or 0)
+        rname = str(rule.get("username") or "").strip().lstrip("@").lower()
+        who = (rid > 0 and number == rid) or (bool(rname) and bool(name) and name == rname)
+        if not who:
+            continue
+        if any(piece and str(piece) in body for piece in rule.get("texts") or []):
+            return True
+    return False
+
+
 def normalize(raw: dict | None) -> dict:
     base = default_policy()
     raw = raw or {}
@@ -328,6 +442,10 @@ def normalize(raw: dict | None) -> dict:
             base["window_block_minutes"] = max(0, min(int(raw.get("window_block_minutes")), 1440))
         except (TypeError, ValueError):
             base["window_block_minutes"] = 0
+    if "window_block_users" in raw:
+        users, users_error = clean_block_users(raw.get("window_block_users"))
+        if not users_error:
+            base["window_block_users"] = users
     base["watch"] = _user_ids(raw.get("watch"))
     window_mode = str(raw.get("window_mode") or "off")
     bot_mode = str(raw.get("bot_mode") or "off")
@@ -2032,6 +2150,24 @@ def _check() -> None:
     assert pay_open({"web_pay": {"fll": True}}, "fllqb", "webapp") is False
     assert pay_open({"web_pay": {"fll": True}, "pay_keys": {"fll": sample}}, "fllqb", "webapp") is True
     assert normalize({"pay_keys": {"fll": sample, "cf": "nope", "extra": sample}})["pay_keys"] == {"fll": sample}
+    assert normalize({})["window_block_users"] == []
+    users, error = clean_block_users([
+        {"user": "@Probe", "texts": "hb，hb"},
+        {"user_id": 7, "texts": ["测挂"]},
+        {"username": "probe", "text": "在吗"},
+    ])
+    assert error == "" and users[0] == {"username": "Probe", "texts": ["hb", "在吗"]}
+    assert users[1] == {"user_id": 7, "texts": ["测挂"]}
+    assert "用户写成" in clean_block_users([{"user": "0", "texts": ["hb"]}])[1]
+    assert "用户写成" in clean_block_users([{"user": "1ab", "texts": ["hb"]}])[1]
+    assert "内容不能空" in clean_block_users([{"user": "@ok", "texts": []}])[1]
+    assert "80 字" in clean_block_users([{"user_id": 3, "texts": ["x" * 81]}])[1]
+    assert clean_block_users([]) == ([], "")
+    assert block_user_hit(users, 7, "", "来测挂了")
+    assert not block_user_hit(users, 8, "other", "来测挂了")
+    assert block_user_hit(users, 99, "Probe", "hb")
+    assert not block_user_hit(users, 99, "Probe", "红包")
+    assert normalize({"window_block_users": users})["window_block_users"] == users
 
 
 if __name__ == "__main__":
